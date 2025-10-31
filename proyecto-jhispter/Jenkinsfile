@@ -1,47 +1,61 @@
-pipeline {
-    agent any // Ejecuta en cualquier agente de Jenkins disponible
+#!/usr/bin/env groovy
 
-    tools {
-        // ¡IMPORTANTE! 
-        // Estos nombres ('JDK_17' y 'NodeJS_18') deben coincidir 
-        // con los configurados en "Global Tool Configuration" de tu Jenkins.
-        jdk 'JDK_17' 
-        nodejs 'NodeJS_18'
+node {
+    stage('checkout') {
+        checkout scm
     }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                // Clona el repositorio donde está este Jenkinsfile
-                // (Jenkins lo hace automáticamente si usas "Pipeline from SCM")
-                checkout scm
-            }
-        }
-        
-        stage('Build & Test') {
-            steps {
-                echo 'Dando permisos de ejecución a mvnw...'
-                // JHipster usa un "wrapper" de Maven (mvnw)
-                sh 'chmod +x mvnw'
-                
-                echo 'Iniciando el build de producción (incluye tests)...'
-                // -Pprod activa el perfil de producción (empaqueta JS, etc.)
-                // 'clean package' compila, corre tests (Java y JS) y empaqueta todo.
-                sh './mvnw clean package -Pprod'
-            }
+    stage('check java') {
+        sh "java -version"
+    }
+
+    stage('clean') {
+        sh "chmod +x mvnw"
+        sh "./mvnw -ntp clean -P-webapp"
+    }
+    stage('nohttp') {
+        sh "./mvnw -ntp checkstyle:check"
+    }
+
+    stage('install tools') {
+        sh "./mvnw -ntp com.github.eirslett:frontend-maven-plugin:install-node-and-npm@install-node-and-npm"
+    }
+
+    stage('npm install') {
+        sh "./mvnw -ntp com.github.eirslett:frontend-maven-plugin:npm"
+    }
+    stage('backend tests') {
+        try {
+            sh "./mvnw -ntp verify -P-webapp"
+        } catch(err) {
+            throw err
+        } finally {
+            junit '**/target/surefire-reports/TEST-*.xml,**/target/failsafe-reports/TEST-*.xml'
         }
     }
-    
-    post {
-        // Esto se ejecuta siempre al final del pipeline
-        always {
-            echo 'Archivando resultados de tests...'
-            // Le dice a Jenkins dónde encontrar los reportes de tests (JUnit)
-            // para mostrarlos en la interfaz gráfica.
-            junit 'target/surefire-reports/**/*.xml'
-            
-            // Opcional: Guarda el .jar final como un "artefacto"
-            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+
+    stage('frontend tests') {
+        try {
+            sh "./mvnw -ntp com.github.eirslett:frontend-maven-plugin:npm -Dfrontend.npm.arguments='run test'"
+        } catch(err) {
+            throw err
+        } finally {
+            junit '**/target/test-results/TESTS-results-jest.xml'
         }
+    }
+
+    stage('packaging') {
+        sh "./mvnw -ntp verify -P-webapp -Pprod -DskipTests"
+        archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+    }
+
+
+    // ... (después del stage 'packaging') ...
+
+    stage('publish docker') {
+      withCredentials([usernamePassword(credentialsId: 'dockerhub-login', passwordVariable: 'DOCKER_REGISTRY_PWD', usernameVariable: 'DOCKER_REGISTRY_USER')]) {
+        sh "./mvnw -ntp jib:build"
+      }
     }
 }
+
