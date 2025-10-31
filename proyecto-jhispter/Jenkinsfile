@@ -1,0 +1,47 @@
+pipeline {
+    agent any // Ejecuta en cualquier agente de Jenkins disponible
+
+    tools {
+        // ¡IMPORTANTE! 
+        // Estos nombres ('JDK_17' y 'NodeJS_18') deben coincidir 
+        // con los configurados en "Global Tool Configuration" de tu Jenkins.
+        jdk 'JDK_17' 
+        nodejs 'NodeJS_18'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clona el repositorio donde está este Jenkinsfile
+                // (Jenkins lo hace automáticamente si usas "Pipeline from SCM")
+                checkout scm
+            }
+        }
+        
+        stage('Build & Test') {
+            steps {
+                echo 'Dando permisos de ejecución a mvnw...'
+                // JHipster usa un "wrapper" de Maven (mvnw)
+                sh 'chmod +x mvnw'
+                
+                echo 'Iniciando el build de producción (incluye tests)...'
+                // -Pprod activa el perfil de producción (empaqueta JS, etc.)
+                // 'clean package' compila, corre tests (Java y JS) y empaqueta todo.
+                sh './mvnw clean package -Pprod'
+            }
+        }
+    }
+    
+    post {
+        // Esto se ejecuta siempre al final del pipeline
+        always {
+            echo 'Archivando resultados de tests...'
+            // Le dice a Jenkins dónde encontrar los reportes de tests (JUnit)
+            // para mostrarlos en la interfaz gráfica.
+            junit 'target/surefire-reports/**/*.xml'
+            
+            // Opcional: Guarda el .jar final como un "artefacto"
+            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+        }
+    }
+}
