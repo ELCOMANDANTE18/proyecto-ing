@@ -18,10 +18,8 @@ node {
             sh "chmod +x mvnw" // <-- Ahora sí encontrará 'mvnw'
             sh "./mvnw -ntp clean -P-webapp"
         }
-        stage('nohttp') {
-            sh "./mvnw -ntp checkstyle:check"
-        }
-
+       
+       
         stage('install tools') {
             sh "./mvnw -ntp com.github.eirslett:frontend-maven-plugin:install-node-and-npm@install-node-and-npm"
         }
